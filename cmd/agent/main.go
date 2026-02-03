@@ -1,14 +1,16 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -35,17 +37,34 @@ func main() {
 		panic(err)
 	}
 
-	pods, err := clientset.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		panic(err)
-	}
+	factory := informers.NewSharedInformerFactory(clientset, time.Minute)
+	podInformer := factory.Core().V1().Pods().Informer()
 
-	local := 0
-	for _, p := range pods.Items {
-		if p.Spec.NodeName == nodeName {
-			local++
-		}
-	}
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			pod := obj.(*v1.Pod)
+			if pod.Spec.NodeName == nodeName {
+				fmt.Printf("[ADD] pod %s/%s on this node\n", pod.Namespace, pod.Name)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			pod := newObj.(*v1.Pod)
+			if pod.Spec.NodeName == nodeName {
+				fmt.Printf("[UPDATE] pod %s/%s on this node\n", pod.Namespace, pod.Name)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			pod := obj.(*v1.Pod)
+			if pod.Spec.NodeName == nodeName {
+				fmt.Printf("[DELETE] pod %s/%s on this node\n", pod.Namespace, pod.Name)
+			}
+		},
+	})
 
-	fmt.Printf("found %d pods on this node\n", local)
+	stopCh := make(chan struct{})
+	factory.Start(stopCh)
+	factory.WaitForCacheSync(stopCh)
+
+	select {}
+
 }
