@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -26,9 +27,13 @@ func main() {
 	}
 	fmt.Printf("running on node: %s\n", nodeName)
 
+	// --- Kubernetes config (IN-CLUSTER first, then KUBECONFIG, then HOME) ---
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
+		kubeconfig := os.Getenv("KUBECONFIG")
+		if kubeconfig == "" {
+			kubeconfig = filepath.Join(os.Getenv("HOME"), ".kube", "config")
+		}
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 		if err != nil {
 			panic(err)
@@ -40,54 +45,80 @@ func main() {
 		panic(err)
 	}
 
-	active := make(map[string]int)
+	// Track active tcpdump processes per Pod UID
+	active := make(map[string]*exec.Cmd)
+
+	startCapture := func(pod *v1.Pod, n int) {
+		uid := string(pod.UID)
+		file := fmt.Sprintf("/tmp/capture-%s.pcap", pod.Name)
+
+		cmd := exec.Command(
+			"tcpdump",
+			"-C", "1",
+			"-W", strconv.Itoa(n),
+			"-w", file,
+		)
+
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("failed to start tcpdump for %s/%s: %v\n", pod.Namespace, pod.Name, err)
+			return
+		}
+
+		active[uid] = cmd
+		fmt.Printf("[START] tcpdump for pod %s/%s (N=%d)\n", pod.Namespace, pod.Name, n)
+	}
+
+	stopCapture := func(pod *v1.Pod) {
+		uid := string(pod.UID)
+
+		if cmd, ok := active[uid]; ok {
+			_ = cmd.Process.Kill()
+			delete(active, uid)
+		}
+
+		files, _ := filepath.Glob("/tmp/capture-*")
+		for _, f := range files {
+			_ = os.Remove(f)
+		}
+
+		fmt.Printf("[STOP] tcpdump for pod %s/%s\n", pod.Namespace, pod.Name)
+	}
 
 	factory := informers.NewSharedInformerFactory(clientset, time.Minute)
 	podInformer := factory.Core().V1().Pods().Informer()
 
-	handle := func(pod *v1.Pod) {
-		if pod.Spec.NodeName != nodeName {
-			return
-		}
-
-		uid := string(pod.UID)
-		val, ok := pod.Annotations[annotationKey]
-
-		if ok {
-			n, err := strconv.Atoi(val)
-			if err != nil || n <= 0 {
-				return
-			}
-
-			prev, exists := active[uid]
-			if !exists {
-				active[uid] = n
-				fmt.Printf("[START] capture pod %s/%s (N=%d)\n", pod.Namespace, pod.Name, n)
-			} else if prev != n {
-				active[uid] = n
-				fmt.Printf("[RESTART] capture pod %s/%s (N=%d)\n", pod.Namespace, pod.Name, n)
-			}
-		} else {
-			if _, exists := active[uid]; exists {
-				delete(active, uid)
-				fmt.Printf("[STOP] capture pod %s/%s\n", pod.Namespace, pod.Name)
-			}
-		}
-	}
-
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			handle(obj.(*v1.Pod))
+			pod := obj.(*v1.Pod)
+			if pod.Spec.NodeName != nodeName {
+				return
+			}
+			if val, ok := pod.Annotations[annotationKey]; ok {
+				if n, err := strconv.Atoi(val); err == nil && n > 0 {
+					startCapture(pod, n)
+				}
+			}
 		},
 		UpdateFunc: func(_, newObj interface{}) {
-			handle(newObj.(*v1.Pod))
+			pod := newObj.(*v1.Pod)
+			if pod.Spec.NodeName != nodeName {
+				return
+			}
+			if val, ok := pod.Annotations[annotationKey]; ok {
+				if _, exists := active[string(pod.UID)]; !exists {
+					if n, err := strconv.Atoi(val); err == nil && n > 0 {
+						startCapture(pod, n)
+					}
+				}
+			} else {
+				stopCapture(pod)
+			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			pod := obj.(*v1.Pod)
-			if _, exists := active[string(pod.UID)]; exists {
-				delete(active, string(pod.UID))
-				fmt.Printf("[STOP] capture pod %s/%s (deleted)\n", pod.Namespace, pod.Name)
-			}
+			stopCapture(obj.(*v1.Pod))
 		},
 	})
 
@@ -95,5 +126,6 @@ func main() {
 	factory.Start(stopCh)
 	factory.WaitForCacheSync(stopCh)
 
+	// Block forever
 	select {}
 }
