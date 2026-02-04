@@ -1,0 +1,7 @@
+# packet captures
+*.pcap
+*.pcap*
+artifacts/capture-output.txt
+
+# local binaries
+agent
