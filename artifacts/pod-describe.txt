@@ -1,0 +1,53 @@
+Name:             traffic-generator
+Namespace:        default
+Priority:         0
+Service Account:  default
+Node:             antrea-lfx-worker/172.18.0.2
+Start Time:       Wed, 04 Feb 2026 11:10:46 +0530
+Labels:           <none>
+Annotations:      tcpdump.antrea.io: 5
+Status:           Running
+IP:               10.244.1.5
+IPs:
+  IP:  10.244.1.5
+Containers:
+  traffic:
+    Container ID:  containerd://d3106bb6a20fe28079da2ef3c775aea5c7e3a3d541d85370ff60331590dfe932
+    Image:         busybox:1.36
+    Image ID:      docker.io/library/busybox@sha256:b9598f8c98e24d0ad42c1742c32516772c3aa2151011ebaf639089bd18c605b8
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      sh
+      -c
+      while true; do
+        wget -q -O- https://example.com >/dev/null 2>&1 || true
+        sleep 1
+      done
+      
+    State:          Running
+      Started:      Wed, 04 Feb 2026 11:10:56 +0530
+    Ready:          True
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-8hrzw (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       True 
+  ContainersReady             True 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-8hrzw:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:                      <none>
