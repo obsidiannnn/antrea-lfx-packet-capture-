@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: capture-agent
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: capture-agent
+  template:
+    metadata:
+      labels:
+        app: capture-agent
+    spec:
+      serviceAccountName: capture-agent
+      hostNetwork: true
+      containers:
+      - name: agent
+        image: antrea-capture:dev
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: capture
+          mountPath: /tmp
+      volumes:
+      - name: capture
+        emptyDir: {}
