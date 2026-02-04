@@ -1,0 +1,7 @@
+Capture Summary:
+- Pod: traffic-generator
+- Duration: ~40s
+- Interfaces: eth0
+- Evidence: TCP + UDP + HTTPS traffic observed
+- Verified via tcpdump decode
+
