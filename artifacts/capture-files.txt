@@ -1,5 +1,7 @@
 Capture files are created under /tmp inside the capture-agent DaemonSet pod
 during active capture and are cleaned up immediately when capture stops.
 
-A capture file (capture-traffic-generator.pcap*) was observed while tcpdump
+A capture file (capture-traffic-generator.pcap*) was observed whilE tcpdump
 was running and copied out of the Pod using kubectl cp.
+  
+    
