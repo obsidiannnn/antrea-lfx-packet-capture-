@@ -74,9 +74,13 @@ To address this, packet capture state is now strictly bound to the target pod UI
 Core validation logic
 
 // Validate that the capture is still bound to the same pod instance.
+
 // Pod names may remain stable across restarts, but UIDs do not.
+
 if pc.Status.PodUID != "" && pc.Status.PodUID != string(pod.UID) {
+
     // Stale capture detected — stop and reinitialize
+    
     stopCapture(pc)
 
     pc.Status.PodUID = ""
