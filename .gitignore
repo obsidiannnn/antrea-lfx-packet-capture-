@@ -1,7 +1,8 @@
 # packet captures
-*.pcap
 *.pcap*
-artifacts/capture-output.txt
+
+# decoded tcpdump output (large, reproducible)
+
 
 # local binaries
 agent
