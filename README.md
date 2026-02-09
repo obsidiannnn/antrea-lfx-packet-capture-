@@ -1,107 +1,111 @@
-LFX Antrea Pre-Test – PacketCapture
-Overview
+# LFX Antrea Pre-Test – PacketCapture
 
-This repository contains my implementation for the Antrea PacketCapture pre-test as part of the LFX Mentorship Program.
+## Overview
 
-In addition to implementing packet capture functionality, this work focuses on correctness under real Kubernetes conditions, specifically around pod lifecycle, controller reconciliation, and capture process management.
+This repository contains my implementation for the **Antrea PacketCapture pre-test** as part of the **LFX Mentorship Program**.
 
-The primary goal was not just to “produce packet output”, but to ensure that captured data is always semantically correct.
+In addition to implementing packet capture functionality, this work focuses on **correctness under real Kubernetes conditions**, particularly around pod lifecycle, controller reconciliation, and capture process management.
+
+The primary goal was not just to *produce packet output*, but to ensure that **captured data is always semantically correct**.
+
 ---
-Problem Context
 
-The task requires capturing packets from a target pod using tcpdump, orchestrated by a Kubernetes controller.
+## Problem Context
+
+The task requires capturing packets from a target pod using `tcpdump`, orchestrated by a Kubernetes controller.
 
 While the basic implementation is straightforward, real Kubernetes environments introduce challenges such as:
 
-- pod restarts
+- pod restarts  
+- reconcile loops  
+- state reuse  
+- asynchronous lifecycle events  
 
-- reconcile loops
+These conditions can lead to **subtle correctness bugs** that are not immediately visible from successful command execution alone.
 
-- state reuse
-
-- asynchronous lifecycle events
-
-These conditions can lead to subtle correctness bugs that are not immediately visible from successful command execution alone.
 ---
-Design Issue Identified: Silent Packet Capture Drift
 
-During testing, I identified a silent correctness issue where packet capture could attach to an unintended pod, even though the capture process appeared to run successfully.
+## Design Issue Identified: Silent Packet Capture Drift
 
-Observed behavior
+During testing, I identified a **silent correctness issue** where packet capture could attach to an **unintended pod**, even though the capture process appeared to run successfully.
 
-- A PacketCapture CR targeted a specific application pod
+### Observed behavior
 
-- tcpdump started successfully
+- A `PacketCapture` CR targeted a specific application pod  
+- `tcpdump` started successfully  
+- However, packets were captured from a **different pod** (observed with CoreDNS)
 
-- However, packets were captured from a different pod (observed with CoreDNS)
+The system appeared healthy, but the diagnostic data was **incorrect**.
 
-The system appeared healthy, but the diagnostic data was incorrect.
+This class of bug is particularly dangerous because it **does not fail loudly**.
 
-This class of bug is particularly dangerous because it does not fail loudly.
 ---
-Root Cause Analysis
+
+## Root Cause Analysis
 
 The issue stemmed from two related design gaps:
 
-1. Weak coupling between capture state and pod identity
+### 1. Weak coupling between capture state and pod identity
 
-- Pod identity was resolved once and implicitly assumed to remain valid
+- Pod identity was resolved once and implicitly assumed to remain valid  
+- Capture state was reused across reconcile cycles  
+- Pod **names** were treated as stable identifiers  
 
-- Capture state was reused across reconcile cycles
+In Kubernetes, pod **UIDs change on recreation**, even when names remain the same.
 
-- Pod names were treated as stable identifiers
-
-In Kubernetes, pod UIDs change on recreation, even when names remain the same.
 ---
-2. Capture lifecycle not strictly bound to pod lifecycle
+
+### 2. Capture lifecycle not strictly bound to pod lifecycle
 
 Capture processes could survive:
 
-- pod deletion
+- pod deletion  
+- pod recreation  
+- reconcile restarts  
 
-- pod recreation
+This allowed stale capture state to persist and be reused incorrectly.
 
-- reconcile restarts
+Together, these issues allowed packet capture to **silently drift away from the intended pod**.
 
-- This allowed stale capture state to persist and be reused incorrectly
-
-Together, these allowed packet capture to silently drift away from the intended pod.
 ---
-Key Fix: Binding Capture to Pod UID
 
-To address this, packet capture state is now strictly bound to the target pod UID and revalidated on every reconcile.
+## Key Fix: Binding Capture to Pod UID
 
-Core validation logic
+To address this, packet capture state is now **strictly bound to the target pod UID** and revalidated on every reconcile.
 
+### Core validation logic
+
+```go
 // Validate that the capture is still bound to the same pod instance.
-
 // Pod names may remain stable across restarts, but UIDs do not.
-
 if pc.Status.PodUID != "" && pc.Status.PodUID != string(pod.UID) {
-
     // Stale capture detected — stop and reinitialize
-    
     stopCapture(pc)
 
     pc.Status.PodUID = ""
     pc.Status.PodName = ""
 }
+```
 
-What this guarantees
+---
 
-- Capture cannot survive pod restarts
+### What this guarantees
 
-- Pod recreation always triggers explicit cleanup
+1. Capture cannot survive pod restarts
 
-Capture either:
+2. Pod recreation always triggers explicit cleanup
 
-- runs on the correct pod, or
+3. Capture either:
 
-- is deterministically restarted
+    - runs on the correct pod, or
+
+    - is deterministically restarted
 
 No silent mis-captures.
+
 ---
-Additional Hardening
+
+### Additional Hardening
 
 Beyond UID validation, the controller logic was strengthened to ensure:
 
@@ -114,21 +118,28 @@ Beyond UID validation, the controller logic was strengthened to ensure:
 - Output paths scoped per pod instance to prevent reuse
 
 These changes make capture behavior deterministic and lifecycle-safe.
+
 ---
-Why This Matters
+
+### Why This Matters
 
 Packet capture is typically used for debugging production network issues.
 
 Capturing packets from the wrong pod can:
 
-- mislead operators
+    1. mislead operators
 
-- waste debugging time
+    2. waste debugging time
 
-- lead to incorrect conclusions about system behavior
+    3. lead to incorrect conclusions about system behavior
 
 Correctness here is more important than simply producing output.
+
 ---
+
+# Repository Structure
+
+```text
 .
 ├── controller/            # PacketCapture controller logic
 ├── agent/                 # tcpdump execution logic
@@ -139,9 +150,12 @@ Correctness here is more important than simply producing output.
 │   └── pods.txt
 ├── config/                # CRDs and manifests
 └── README.md
-Large decoded packet outputs are intentionally excluded from version control, as they are environment-specific and reproducible from capture data.
+```
+### Large decoded packet outputs are intentionally excluded from version control, as they are environment-specific and reproducible from capture data.
+
 ---
-How to Verify Correctness
+
+### How to Verify Correctness
 
 1. Deploy the controller and agent
 
@@ -151,15 +165,17 @@ How to Verify Correctness
 
 4. Observe:
 
-   - existing capture is stopped
+    - existing capture is stopped
 
-   - pod UID mismatch is detected
+    - pod UID mismatch is detected
 
-   - capture is restarted on the new pod instance
+    - capture is restarted on the new pod instance
 
 This confirms correct lifecycle coupling.
----
-Lessons Learned
+
+----
+
+# Lessons Learned
 
 - Pod names are not stable identifiers
 
@@ -168,12 +184,17 @@ Lessons Learned
 - Silent failures are more dangerous than crashes
 
 - Controller state must always be validated against current cluster reality
----
-Conclusion
 
-This work demonstrates not only implementation of packet capture functionality, but also identification and resolution of a real controller correctness issue involving pod identity and lifecycle management.
-
-The resulting design prioritizes correctness, determinism, and operational safety under real Kubernetes conditions.
 ---
-Most implementations stop at “working output”.
-This implementation ensures the output is correct.
+
+### Conclusion
+
+### This work demonstrates not only implementation of packet capture functionality, but also identification and resolution of a real controller correctness issue involving pod identity and lifecycle management.
+
+### The resulting design prioritizes correctness, determinism, and operational safety under real Kubernetes conditions.
+
+---
+
+# Most implementations stop at “working output”.
+# This implementation ensures the output is correct.
+

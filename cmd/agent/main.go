@@ -34,7 +34,6 @@ func main() {
 	}
 	fmt.Printf("running on node: %s\n", nodeName)
 
-	// --- Kubernetes config ---
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		kubeconfig := os.Getenv("KUBECONFIG")
@@ -52,7 +51,6 @@ func main() {
 		panic(err)
 	}
 
-	// 🔑 declare first
 	var stopCaptureLocked func()
 
 	startCapture := func(pod *v1.Pod, n int) {
@@ -61,12 +59,10 @@ func main() {
 		mu.Lock()
 		defer mu.Unlock()
 
-		// Stop any existing capture
 		if activePod != "" && activePod != key {
 			stopCaptureLocked()
 		}
 
-		// Already capturing this pod
 		if activePod == key {
 			return
 		}
@@ -105,7 +101,6 @@ func main() {
 		}
 	}
 
-	// 🔑 define after declaration
 	stopCaptureLocked = func() {
 		if activeCmd == nil {
 			return
