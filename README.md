@@ -27,7 +27,17 @@ These conditions can lead to **subtle correctness bugs** that are not immediatel
 
 ## Design Issue Identified: Silent Packet Capture Drift
 
-During testing, I identified a **silent correctness issue** where packet capture could attach to an **unintended pod**, even though the capture process appeared to run successfully.
+During packet capture execution, the `tcpdump` process was observed
+running inside the `capture-agent` pod rather than within the target
+application pod (`traffic-generator`). This shows that packet capture
+execution occurs in an infrastructure component instead of the workload
+pod, which can lead to an incorrect network namespace context.
+
+The screenshot below shows `tcpdump` actively running inside the
+`capture-agent` pod.
+
+![tcpdump running inside capture-agent pod](artifacts/Screenshot/tcpdump-running-in-capture-agent.png)
+---
 
 ### Observed behavior
 

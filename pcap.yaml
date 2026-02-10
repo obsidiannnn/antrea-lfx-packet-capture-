@@ -4,9 +4,9 @@ metadata:
   name: traffic-pcap
   namespace: default
 spec:
-  target:
-    pod: traffic-generator
-    namespace: default
+  source:
+    pod:
+      name: traffic-generator
+      namespace: default
   captureConfig:
-    fileSize: 1Mi
-    packetLimit: 100
+    firstN: 100
