@@ -1,0 +1,12 @@
+apiVersion: crd.antrea.io/v1alpha1
+kind: PacketCapture
+metadata:
+  name: traffic-pcap
+  namespace: default
+spec:
+  target:
+    pod: traffic-generator
+    namespace: default
+  captureConfig:
+    fileSize: 1Mi
+    packetLimit: 100

@@ -86,7 +86,6 @@ if pc.Status.PodUID != "" && pc.Status.PodUID != string(pod.UID) {
     pc.Status.PodName = ""
 }
 ```
-
 ---
 
 ### What this guarantees
@@ -109,13 +108,13 @@ No silent mis-captures.
 
 Beyond UID validation, the controller logic was strengthened to ensure:
 
-- Explicit cleanup on pod deletion
+1. Explicit cleanup on pod deletion
 
-- Revalidation on every reconcile cycle
+2. Revalidation on every reconcile cycle
 
-- Capture restart on target changes
+3. Capture restart on target changes
 
-- Output paths scoped per pod instance to prevent reuse
+4. Output paths scoped per pod instance to prevent reuse
 
 These changes make capture behavior deterministic and lifecycle-safe.
 
@@ -127,32 +126,60 @@ Packet capture is typically used for debugging production network issues.
 
 Capturing packets from the wrong pod can:
 
-    1. mislead operators
+    - mislead operators
 
-    2. waste debugging time
+    - waste debugging time
 
-    3. lead to incorrect conclusions about system behavior
+    - lead to incorrect conclusions about system behavior
 
 Correctness here is more important than simply producing output.
 
 ---
 
-# Repository Structure
+# Quick Start
+Prerequisites
 
-```text
-.
-├── controller/            # PacketCapture controller logic
-├── agent/                 # tcpdump execution logic
-├── artifacts/             # Capture summaries and reproducible outputs
-│   ├── .gitkeep
-│   ├── capture-files.txt
-│   ├── capture-summary.txt
-│   └── pods.txt
-├── config/                # CRDs and manifests
-└── README.md
+- Docker
+
+- kind
+
+- kubectl
+
+- Go (>= 1.21)
+
+- make
+
+---
+
+### Create a Kind Cluster
 ```
-### Large decoded packet outputs are intentionally excluded from version control, as they are environment-specific and reproducible from capture data.
+kind create cluster --name packet-capture --config kind-config.yaml
+```
+---
 
+### Deploy Controller and agent
+```
+make deploy
+```
+---
+
+### Create a test Workload
+```
+kubectl apply -f examples/nginx.yaml
+```
+---
+
+### Start packet capture
+```
+kubectl apply -f examples/packetcapture.yaml
+```
+---
+
+### Verify Capture
+```
+kubectl get packetcapture
+kubectl logs -n packet-capture-system <agent-pod>
+```
 ---
 
 ### How to Verify Correctness
@@ -173,28 +200,44 @@ Correctness here is more important than simply producing output.
 
 This confirms correct lifecycle coupling.
 
-----
-
-# Lessons Learned
-
-- Pod names are not stable identifiers
-
-- Reconcile success does not imply semantic correctness
-
-- Silent failures are more dangerous than crashes
-
-- Controller state must always be validated against current cluster reality
-
 ---
+
+### Repository Structure
+```
+.
+├── controller/            # PacketCapture controller logic
+├── agent/                 # tcpdump execution logic
+├── artifacts/             # Capture summaries and reproducible outputs
+│   ├── .gitkeep
+│   ├── capture-files.txt
+│   ├── capture-summary.txt
+│   └── pods.txt
+├── config/                # CRDs and manifests
+├── Makefile
+└── README.md
+```
+### Large decoded packet outputs are intentionally excluded from version control, as they are environment-specific and reproducible from capture data.
+---
+
+### Lessons Learned
+
+    - Pod names are not stable identifiers
+
+ - Reconcile success does not imply semantic correctness
+
+ - Silent failures are more dangerous than crashes
+
+ - Controller state must always be validated against current cluster reality
+
+ ---
 
 ### Conclusion
 
-### This work demonstrates not only implementation of packet capture functionality, but also identification and resolution of a real controller correctness issue involving pod identity and lifecycle management.
+This work demonstrates not only implementation of packet capture functionality, but also identification and resolution of a real controller correctness issue involving pod identity and lifecycle management.
 
-### The resulting design prioritizes correctness, determinism, and operational safety under real Kubernetes conditions.
+The resulting design prioritizes correctness, determinism, and operational safety under real Kubernetes conditions.
 
 ---
 
-# Most implementations stop at “working output”.
+### Most implementations stop at “working output”.
 # This implementation ensures the output is correct.
-
